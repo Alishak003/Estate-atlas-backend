@@ -118,10 +118,7 @@ class RegisterController extends Controller
 
         // Map label to Stripe Price ID if needed
         $price_id = $request->price_id;
-        if (array_key_exists($price_id, $priceIdMap)) {
-            $price_id = $priceIdMap[$price_id];
-        }
-
+    
         // 2. If referral code is present, find the referrer affiliate
         $referrerAffiliate = null;
         if (!empty($request->affiliate_code)) {
@@ -214,7 +211,7 @@ class RegisterController extends Controller
                 'success' => true,
                 'user' => $user,
                 'token' => $token,
-                'affiliate_code' => $affiliateCode,
+                // 'affiliate_code' => $affiliateCode,
                 // 'subscription' => [
                 //     'id' => $subscription->stripe_id,
                 //     'status' => $subscription->stripe_status,
