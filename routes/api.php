@@ -27,7 +27,7 @@ Route::post('/reset-password', [ForgotPasswordController::class, 'resetPassword'
 
 Route::post('/contact', [ContactController::class, 'store'])->name('contact.store');
 
-Route::post('/stripe/webhook', [WebhookController::class, 'handleWebhook']);
+Route::post('/webhook/stripe', [WebhookController::class, 'handleWebhook']);
 
 
 Route::group(['middleware' => ['auth:api']], function () {
@@ -74,6 +74,7 @@ Route::group(['middleware' => ['auth:api']], function () {
     Route::get('subscriptions/get-all-amounts', [SubscriptionController::class, 'getAllSubscriptionAmounts']);
 
     Route::get('/user', [UserController::class, 'getUser'])->middleware('auth:api');
+    Route::get('/user/plan', [UserController::class, 'getUserPlan']);
 
     // Stripe Connect Routes
     Route::get('/stripe/connect/create', [StripeConnectController::class, 'createAccountLink'])->name('stripe.connect.create');

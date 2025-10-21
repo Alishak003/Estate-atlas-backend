@@ -23,6 +23,7 @@ class LoginController extends Controller
         }
 
         $user = Auth::user();
+        
         $payload = [
             'user' => $user,
             'iss'  => URL::secure('/'),

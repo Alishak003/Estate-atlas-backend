@@ -8,6 +8,9 @@ use Stripe\Stripe;
 use Stripe\Account;
 use Stripe\Checkout\Session;
 use Stripe\AccountLink;
+use App\Models\User;
+use App\Models\Plans;
+use Illuminate\Support\Facades\Validator;
 
 class StripeConnectController extends Controller
 {
@@ -114,32 +117,61 @@ class StripeConnectController extends Controller
 
     public function createCheckoutSession(Request $request)
     {
-        Stripe::setApiKey(env('STRIPE_SECRET'));
-        $price_id  = $request->price_id?? '';
-        if(empty($price_id)){
+        $validator = Validator::make($request->json()->all(),[
+            'price_slug'=>'required|string',
+            'is_yearly'=>'nullable|boolean',
+            'user_data'=>'required|array',
+            'user_data.email'=>'required|email',
+            'user_data.first_name'=>'required|string',
+            'user_data.stripe_id'=>'nullable|string',
+            'user_data.id'=>'required|integer',
+        ]);
+
+        if ($validator->fails()) {
+            \Log::warning('Validation failed:', $validator->errors()->toArray());
+
             return response()->json([
-            'success' => false,
-            'message' => "price id not set"
-            ]);
-        }
-        $user = auth()->user(); // Or get the user you just created
-        if (!$user->hasStripeId()) {
-            $user->createAsStripeCustomer();
-        }
-        if (!$user->stripe_id) {
-            $customer = \Stripe\Customer::create([
-                'email' => $user->email,
-                'name' => $user->name,
-            ]);
-            $user->stripe_id = $customer->id;
-            $user->save();
+                'success' => false,
+                'message' => 'Validation error',
+                'errors' => $validator->errors()
+            ], 422);
         }
 
-        $frontendUrl = env('FRONTEND_URL', 'http://localhost:7535');
+        $validated  =$validator->validated();
+        $user = $validated['user_data'];
+
+        Stripe::setApiKey(config('services.stripe.secret'));
+        $price_slug  = $validated['price_slug'];
+        $price_id = Plans::where("slug",$price_slug)->pluck('stripe_price_id')->first(); 
+        \Log::info("price slug : ".$price_slug);
+        \Log::info("price id : ".$price_id);
+        $userModel = User::find($user['id']);
+        if (!$userModel) {
+            return response()->json(['error' => 'User not found'], 404);
+        }
+
+        if (empty($userModel->stripe_id) && !empty($user['stripe_id'])) {
+            // If your DB user has no stripe_id, but payload has one, save it
+            $userModel->stripe_id = $user['stripe_id'];
+            $userModel->save();
+        }
+
+        if (empty($userModel->stripe_id)) {
+            // If still no stripe_id after above, create a new Stripe customer
+            $customer = \Stripe\Customer::create([
+                'email' => $userModel->email,
+                'name' => $userModel->first_name,
+            ]);
+            $userModel->stripe_id = $customer->id;
+            $userModel->save();
+        }
+
+
+        $frontendUrl = config('app.frontendurl');
 
         $checkoutSession = Session::create([
-            'customer' => $user->stripe_id, 
-            // 'payment_method_types' => ['card'],
+            'customer' => $userModel->stripe_id, 
+            'payment_method_types' => ['card'],
             'line_items' => [[
                 'price' => $price_id, 
                 'quantity' => 1,

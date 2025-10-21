@@ -10,6 +10,10 @@ use Illuminate\Support\Facades\Hash;
 use App\Traits\AuthenticatedUserCheck;
 use App\Http\Requests\ProfileUpdateRequest;
 use App\Http\Requests\ChangePasswordRequest;
+use Laravel\Cashier\Subscription;
+use App\Models\User;
+use Illuminate\Support\Facades\Log;
+
 
 class UserController extends Controller
 {
@@ -74,6 +78,29 @@ class UserController extends Controller
         return $this->successResponse(
             null,
             'Password updated successfully.'
+        );
+    }
+
+    public function getUserPlan() 
+    {
+        \Log::info("api hit");
+        $user = Auth::user();
+        if(!$user){
+            return response()->json(['message'=>'Unautheticated User'],401);
+        }
+        \Log::info("authenticated");
+
+
+        $currentSubscription = $user->currentPlan();
+        \Log::info("cription",[$currentSubscription]);
+
+        if (!$currentSubscription) {
+        return response()->json(['message' => 'No active subscription found.'], 404);
+        }
+
+        // 3. Return the data
+        return $this->successResponse(
+            $currentSubscription
         );
     }
 }

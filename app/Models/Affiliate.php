@@ -17,11 +17,7 @@ class Affiliate extends Model
         'total_commission',
         'commission_rate',
         'status',
-        'total_visits',
-        'affiliate_link',
-        'affiliate_code',
         'link_generated_count',
-        'visits_count',
     ];
 
     protected $appends = ['affiliate_link'];
@@ -33,13 +29,12 @@ class Affiliate extends Model
         'total_commission' => 'decimal:2',
         'commission_rate' => 'decimal:2',
         'link_generated_count' => 'integer',
-        'visits_count' => 'integer',
     ];
 
     public function getAffiliateLinkAttribute()
     {
         // Return the correct URL format that we want to track
-        return "http://204.197.173.249:7532/auth/register/?code=" . $this->affiliate_code;
+        return config('app.url') .'/auth/register/?code='. $this->affiliate_code ;
     }
 
     public function user()
@@ -65,4 +60,29 @@ class Affiliate extends Model
     {
         return $this->hasMany(AffiliateVisit::class);
     }
+
+    public function generateAffiliateCode($userId): ?Affiliate
+    {
+        // Check if user already has an affiliate record
+        $code = strtoupper(uniqid('AFF'));
+        $affiliate = Affiliate::where('user_id',$userId)->first();
+        if($affiliate && $affiliate->affiliate_code){
+            return $affiliate;
+        }
+        if(!$affiliate){
+        $affiliate = new Affiliate();
+        $affiliate->user_id = $this->id;
+        $affiliate->commission_rate = 50.00;
+        $affiliate->status = 'active';
+        $affiliate->total_clicks = 0;
+        $affiliate->total_referrals = 0;
+        $affiliate->total_commission = 0.00;
+        $affiliate->stripe_connect_account_id = null;
+        }
+        $affiliate->affiliate_code = $code;
+        $affiliate->save();
+
+        return $affiliate;
+    }
+
 }

@@ -59,11 +59,11 @@ class SubscriptionController extends Controller
     public function updateSubscription(Request $request): JsonResponse
     {
         $request->validate([
-            'price_id' => 'required|string|in:basic_monthly,basic_yearly,premium_monthly,premium_yearly',
+            'price_slug' => 'required|string|in:basic_monthly,basic_yearly,premium_monthly,premium_yearly',
         ]);
 
         $user = $request->user();
-        $priceId = self::PRICE_IDS[$request->price_id];
+        $priceId = Plans::where("slug",$request->price_slug)->pluck('stripe_price_id')->first();
 
         if (!$user->isSubscribed()) {
             return response()->json([

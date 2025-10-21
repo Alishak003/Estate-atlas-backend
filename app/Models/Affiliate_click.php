@@ -14,7 +14,6 @@ class Affiliate_click extends Model
         'user_agent',
         'referer',
         'clicked_at',
-        'code'
     ];
 
     protected $dates = [

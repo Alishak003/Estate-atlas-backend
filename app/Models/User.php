@@ -10,6 +10,7 @@ use Laravel\Cashier\Billable;
 use Tymon\JWTAuth\Contracts\JWTSubject;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Str;
+use Laravel\Cashier\Subscription;
 
 class User extends Authenticatable implements JWTSubject
 {
@@ -76,12 +77,12 @@ class User extends Authenticatable implements JWTSubject
 
     public function hasBasicSubscription()
     {
-        return $this->subscribed('default', ['price_1Ra9wzDgYV6zJ17vI6UiuhLp', 'price_1Ra9xgDgYV6zJ17v4zCAQGLZ']);
+        return $this->subscribed('default', ['price_1SDMAnRzsDq04jEjj80UfhHp', 'price_1SEFYYRzsDq04jEjcSQhnJW9']);
     }
 
     public function hasPremiumSubscription()
     {
-        return $this->subscribed('default', ['price_1Ra9ynDgYV6zJ17v2HMSLJpe', 'price_1Ra9zADgYV6zJ17v7B4zNE1r']);
+        return $this->subscribed('default', ['price_1SDMFKRzsDq04jEjkQZpu3kG', 'price_1SDMGVRzsDq04jEjF198a1uJ']);
     }
 
     public function getSubscriptionTier()
@@ -106,18 +107,27 @@ class User extends Authenticatable implements JWTSubject
         return $this->hasOne(\App\Models\Affiliate::class);
     }
 
-    public function generateAffiliateCode(): Affiliate
+    public function subscriptions()
     {
-        if(!$this->affiliate_code){
-        $code = strtoupper(uniqid('AFF'));
-        $affiliate = new Affiliate();
-        $affiliate->user_id = $this->id;
-        $affiliate->affiliate_code = $code;
-        $affiliate->save();
-        return $affiliate;
-
-        }
-
-
+        return $this->hasMany(Subscription::class);
     }
+
+    
+
+    public function currentPlan()
+    {
+        // 1. Get the active Cashier subscription
+        return $this->subscriptions()
+                    ->where(function ($query) {
+                        $query->where('stripe_status', 'active')
+                            ->orWhere('stripe_status', 'trialing');
+                    })
+                    // 2. Eager-load the local Plan details by joining on the price ID
+                    ->join('plans', 'plans.stripe_price_id', '=', 'subscriptions.stripe_price')
+                    // 3. Select the columns needed, avoiding conflicts (use select())
+                    ->select('subscriptions.stripe_status as status','subscriptions.ends_at as renewalDate', 'plans.name as name', 'plans.price as price', 'plans.duration as duration')
+                    ->latest() // Get the most recent one if multiple exist
+                    ->first();
+    }
+
 }

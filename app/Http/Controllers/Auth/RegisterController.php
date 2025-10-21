@@ -10,8 +10,7 @@ use App\Models\User;
 use App\Models\Affiliate;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Log
-;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
@@ -102,7 +101,7 @@ class RegisterController extends Controller
             'first_name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
             'password' => 'required|string|min:8|confirmed',
-            'price_id' => 'required|string', // subscription plan
+            'price_slug' => 'required|string', // subscription plan
             // 'payment_method' => 'required|string',
             'affiliate_code' => 'nullable|string|exists:affiliates,affiliate_code'
         ]);
@@ -117,75 +116,34 @@ class RegisterController extends Controller
         }
 
         // Map label to Stripe Price ID if needed
-        $price_id = $request->price_id;
+        $price_slug = $request->price_slug;
     
         // 2. If referral code is present, find the referrer affiliate
         $referrerAffiliate = null;
         if (!empty($request->affiliate_code)) {
-            $referrerAffiliate = \App\Models\Affiliate::with('user')->where('affiliate_code', $request->affiliate_code)->first();
+            $referrerAffiliate = Affiliate::with('User')->where('affiliate_code', $request->affiliate_code)->first();
         }
+        \Log::info('affiliateeeee: ' . json_encode($referrerAffiliate));
 
         DB::beginTransaction();
         try {
-            $tempUser = new \App\Models\User([
+
+            $user = new User([
                 'first_name' => $request->first_name,
                 'last_name' => $request->last_name,
                 'email' => $request->email,
                 'password' => bcrypt($request->password),
+                'pending_plan_slug' => $price_slug,
+                'status'=>'pending'
             ]);
 
-            $tempUser->createAsStripeCustomer();
-
-
-            $user = $tempUser;
-           
-            if (!empty($referrerAffiliate) && $referrerAffiliate->user_id !== $user->id) {
-                
-                $firstItem = $subscription->items->first();
-                $amount = null;
-                if ($firstItem && $firstItem->price) {
-                    $amount = $firstItem->price->unit_amount / 100;
-                } elseif ($firstItem && $firstItem->stripe_price) {
-                    $stripePrice = \Stripe\Price::retrieve($firstItem->stripe_price);
-                    $amount = $stripePrice->unit_amount / 100;
-                }
-                if ($amount !== null) {
-                    $commission = $amount * 0.5;
-                    $referrerAffiliate->total_commission += $commission;
-                    $referrerAffiliate->total_referrals += 1;
-                    $referrerAffiliate->save();
-
-                    // Automatically transfer the commission
-                    $referrerUser = $referrerAffiliate->user;
-                    if ($referrerUser && $referrerUser->stripe_connect_id) {
-                        \Illuminate\Support\Facades\Log::info('Referrer has a Stripe Connect account. Attempting payout.', [
-                            'referrer_user_id' => $referrerUser->id,
-                            'stripe_connect_id' => $referrerUser->stripe_connect_id
-                        ]);
-                        try {
-                            \Stripe\Stripe::setApiKey(config('services.stripe.secret'));
-                            $transferPayload = [
-                                'amount' => $commission * 100, // Amount in cents
-                                'currency' => 'usd',
-                                'destination' => $referrerUser->stripe_connect_id,
-                                'transfer_group' => 'commission_payout_' . $subscription->id,
-                            ];
-                            \Illuminate\Support\Facades\Log::info('Stripe transfer payload:', $transferPayload);
-                            \Stripe\Transfer::create($transferPayload);
-                            \Illuminate\Support\Facades\Log::info('Stripe transfer successful.');
-                        } catch (\Exception $e) {
-                            // Log the failed transfer but don't stop the registration
-                            \Illuminate\Support\Facades\Log::error('Stripe transfer failed: ' . $e->getMessage(), [
-                                'trace' => $e->getTraceAsString()
-                            ]);
-                        }
-                    } else {
-                        \Illuminate\Support\Facades\Log::warning('Referrer does not have a Stripe Connect account set up. Skipping payout.', [
-                            'referrer_user_id' => $referrerUser ? $referrerUser->id : null
-                        ]);
-                    }
-                }
+            if(!empty($referrerAffiliate)){
+                $user->referred_by = $referrerAffiliate->id;
             }
+
+            $user->save();
+
+            $user->createAsStripeCustomer();            
 
             DB::commit();
             // Generate JWT token for the user
@@ -211,11 +169,6 @@ class RegisterController extends Controller
                 'success' => true,
                 'user' => $user,
                 'token' => $token,
-                // 'affiliate_code' => $affiliateCode,
-                // 'subscription' => [
-                //     'id' => $subscription->stripe_id,
-                //     'status' => $subscription->stripe_status,
-                // ]
             ])->withCookie($cookie);
         } catch (\Exception $e) {
             \Log::error('RegisterAndSubscribe error: ' . $e->getMessage(), [

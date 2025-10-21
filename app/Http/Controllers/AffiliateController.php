@@ -23,7 +23,7 @@ class AffiliateController extends Controller
     // Generate affiliate link for authenticated user
     public function generateLink(Request $request): JsonResponse
     {
-        $startTime = microtime(true); // Start time for tracking request duration
+        $startTime = microtime(true);
 
         try {
             // Check if the user is authenticated and has a valid token
@@ -37,30 +37,21 @@ class AffiliateController extends Controller
             $user = Auth::user();
 
             Log::info($user);
-            $affiliate = $user->generateAffiliateCode();
-            Log::info($affiliate);
+            $affiliateCode = Affiliate::where('user_id',$user->id)->first();
+            if(!$affiliateCode || $affiliateCode->affiliate_code === null){
+                $affiliateCode = Affiliate::generateAffiliateCode($user->id);
+            }
+            
+            Log::info($affiliateCode);
 
-            if (!$affiliate) {
+            if (!$affiliateCode) {
                 throw new \Exception('Failed to generate affiliate code');
             }
-
-            // Update the affiliate's total click count, referrals, and commission
-            // $this->updateAffiliateTotals($affiliate);
-
-            // Check request timeout
-            $affiliate = \App\Models\Affiliate::create([
-                'user_id' => $user->id,
-                'affiliate_code' => $affiliateCode,
-                'commission_rate' => 50.00,
-                'status' => 'active',
-                'total_clicks' => 0,
-                'total_referrals' => 0,
-                'total_commission' => 0.00,
-            ]);
+           
             $this->checkRequestTimeout($startTime); // Timeout check
-
+        
             return $this->successResponse(
-                new AffiliateResource($affiliate),
+                new AffiliateResource($affiliateCode),
                 'Affiliate link generated successfully'
             );
         } catch (MethodNotAllowedException $e) {
@@ -116,7 +107,6 @@ class AffiliateController extends Controller
                     'affiliate_id' => $affiliate->id,
                     'ip_address' => $ip,
                     'user_agent' => $agent,
-                    'code' => $code,
                     'clicked_at' => now(),
                     'created_at' => now(),
                     'updated_at' => now(),
@@ -149,7 +139,7 @@ class AffiliateController extends Controller
         }
 
         // Always redirect regardless of whether click was recorded
-        $redirectUrl = "http://204.197.173.249:7532/auth/register/?code=$code";
+        $redirectUrl = config('app.frontendurl')."/auth/register/?code=$code";
         return redirect()->away($redirectUrl);
     }
 
@@ -172,22 +162,7 @@ class AffiliateController extends Controller
 
         $affiliate->save();
     }
-    // protected function updateAffiliateTotals(Affiliate $affiliate)
-    // {
-    //     $affiliate->total_clicks = $affiliate->clicks()->count();
 
-    //     // $affiliate->total_referrals = $affiliate->clicks()->where('status', 'referred')->count();
-
-    //     $user = User::find($affiliate->user_id);
-    //     // $subscription_amount = $user->subscription_amount;
-
-    //     // $affiliate->total_commission = $subscription_amount * $affiliate->commission_rate / 100;
-
-    //     $affiliate->save();
-    // }
-    /**
-     * Get affiliate info for a user (by id, email, or authenticated user)
-     */
     public function getAffiliateInfo(Request $request)
     {
         // You can pass user_id or email as a query param, or get the authenticated user

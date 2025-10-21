@@ -23,7 +23,6 @@ return new class extends Migration
         $table->integer('total_visits')->default(0);
         $table->integer('link_generated_count')->default(0);
         $table->text('affiliate_link')->nullable();
-        $table->integer('visits_count')->default(0);
 
         $table->timestamps();
 
