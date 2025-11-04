@@ -22,9 +22,8 @@ return [
     'allowed_origins' => [
         'http://localhost:3000',
         'http://localhost:7535',
-        'https://dennise-bagwigged-sidney.ngrok-free.dev',  
         'https://estate-atlas-frontend.vercel.app',
-
+        'https://estate-atlas-backend.vercel.app',
     ],
 
     'allowed_origins_patterns' => [],
