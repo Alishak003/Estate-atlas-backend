@@ -101,8 +101,7 @@ class RegisterController extends Controller
             'first_name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
             'password' => 'required|string|min:8|confirmed',
-            'price_slug' => 'required|string', // subscription plan
-            // 'payment_method' => 'required|string',
+            'price_slug' => 'required|string', 
             'affiliate_code' => 'nullable|string|exists:affiliates,affiliate_code'
         ]);
         if ($validator->fails()) {
@@ -144,7 +143,7 @@ class RegisterController extends Controller
             $user->save();
 
             $user->createAsStripeCustomer();            
-
+            
             DB::commit();
             // Generate JWT token for the user
             $payload = [

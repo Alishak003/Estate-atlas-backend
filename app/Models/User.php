@@ -36,6 +36,7 @@ class User extends Authenticatable implements JWTSubject
         'subscription_currency',
         'subscription_start_date',
         'stripe_connect_id',
+        'status'
     ];
 
 
@@ -77,12 +78,12 @@ class User extends Authenticatable implements JWTSubject
 
     public function hasBasicSubscription()
     {
-        return $this->subscribed('default', ['price_1SDMAnRzsDq04jEjj80UfhHp', 'price_1SEFYYRzsDq04jEjcSQhnJW9']);
+        return $this->subscribedToPrice('price_1SDMAnRzsDq04jEjj80UfhHp','default') || $this->subscribedToPrice('price_1SEFYYRzsDq04jEjcSQhnJW9','default') ;
     }
 
     public function hasPremiumSubscription()
     {
-        return $this->subscribed('default', ['price_1SDMFKRzsDq04jEjkQZpu3kG', 'price_1SDMGVRzsDq04jEjF198a1uJ']);
+        return $this->subscribedToPrice('price_1SDMGVRzsDq04jEjF198a1uJ','default') || $this->subscribedToPrice('price_1SDMFKRzsDq04jEjkQZpu3kG','default');
     }
 
     public function getSubscriptionTier()
@@ -112,21 +113,13 @@ class User extends Authenticatable implements JWTSubject
         return $this->hasMany(Subscription::class);
     }
 
-    
-
     public function currentPlan()
     {
         // 1. Get the active Cashier subscription
         return $this->subscriptions()
-                    ->where(function ($query) {
-                        $query->where('stripe_status', 'active')
-                            ->orWhere('stripe_status', 'trialing');
-                    })
-                    // 2. Eager-load the local Plan details by joining on the price ID
                     ->join('plans', 'plans.stripe_price_id', '=', 'subscriptions.stripe_price')
-                    // 3. Select the columns needed, avoiding conflicts (use select())
-                    ->select('subscriptions.stripe_status as status','subscriptions.ends_at as renewalDate', 'plans.name as name', 'plans.price as price', 'plans.duration as duration')
-                    ->latest() // Get the most recent one if multiple exist
+                    ->select('subscriptions.stripe_status as status','subscriptions.ends_at as renewalDate', 'plans.slug as slug', 'plans.name as name', 'plans.price as price', 'plans.duration as duration','subscriptions.is_paused as is_paused', 'subscriptions.paused_at')
+                    ->latest('subscriptions.created_at') // Get the most recent one if multiple exist
                     ->first();
     }
 

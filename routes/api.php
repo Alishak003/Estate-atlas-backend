@@ -13,11 +13,13 @@ use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\InvestmentCalculatorController;
 use App\Http\Controllers\StripeConnectController;
+use App\Http\Controllers\CancellationFeedbackController;
 use App\Http\Controllers\HelpSupportController;
 
 Route::post('register', [RegisterController::class, 'register']);
 Route::post('register-subscribe', [RegisterController::class, 'registerAndSubscribe']);
 Route::post('create-checkout-session', [StripeConnectController::class, 'createCheckoutSession']);
+Route::post('checkout-success', [StripeConnectController::class, 'checkoutSuccess']);
 Route::post('login', [LoginController::class, 'login']);
 Route::post('logout', [LogoutController::class, 'logout']);
 
@@ -40,10 +42,12 @@ Route::group(['middleware' => ['auth:api']], function () {
     Route::match(['post', 'put', 'patch', 'HEAD', 'OPTIONS', 'DELETE', 'GET'], 'user/change-password', [UserController::class, 'changePassword']);
 
     Route::get('/subscription', [SubscriptionController::class, 'getSubscriptionDetails']);
+    Route::get('/subscription/getSubscriptionContextDetails', [SubscriptionController::class, 'getSubscriptionContextDetails']);
     Route::post('/subscription/create', [SubscriptionController::class, 'createSubscription']);
     Route::put('/subscription/update', [SubscriptionController::class, 'updateSubscription']);
     Route::post('/subscription/cancel', [SubscriptionController::class, 'cancelSubscription']);
     Route::post('/subscription/resume', [SubscriptionController::class, 'resumeSubscription']);
+    Route::post('/subscription/apply-discount', [SubscriptionController::class, 'applyDiscount']);
 
     // Payment methods
     Route::get('/payment-methods', [SubscriptionController::class, 'getPaymentMethods']);
@@ -75,12 +79,17 @@ Route::group(['middleware' => ['auth:api']], function () {
 
     Route::get('/user', [UserController::class, 'getUser'])->middleware('auth:api');
     Route::get('/user/plan', [UserController::class, 'getUserPlan']);
+    Route::get('/subscription/getSubscriptionTier', [SubscriptionController::class, 'getSubscriptionTier']);
 
     // Stripe Connect Routes
     Route::get('/stripe/connect/create', [StripeConnectController::class, 'createAccountLink'])->name('stripe.connect.create');
     Route::post('/stripe/payment-method/update', [StripeConnectController::class, 'updatePaymentMethod']);
     Route::get('/stripe/payment-history', [StripeConnectController::class, 'paymentHistory']);
-    Route::get('/stripe/invoice/{invoiceId}/download', [StripeConnectController::class, 'downloadInvoice'])->name('stripe.invoice.download');
+    Route::post('/submit-competition-feedback-form', [CancellationFeedbackController::class, 'CreateFeedBack']);    
+    Route::get('/stripe/invoices/download-all', [StripeConnectController::class, 'downloadAllInvoices']); 
+
+    
+
 });
 Route::match(['post', 'put', 'patch', 'head', 'options', 'delete', 'get'], '/affiliate/click/{code}', [AffiliateController::class, 'trackClick'])->name('affiliate.click');
 
@@ -107,3 +116,5 @@ Route::get('/test', function () {
     return response()->json(['status' => 'API working']);
 });
 
+
+Route::get('/stripe/invoice/{invoiceId}/download', [StripeConnectController::class, 'downloadInvoice'])->name('stripe.invoice.download'); 

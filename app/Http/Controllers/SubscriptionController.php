@@ -7,9 +7,23 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
 use Stripe\Exception\InvalidRequestException;
+use Illuminate\Support\Facades\Auth;
+use App\Traits\HandlesApiResponses;
+use Illuminate\Support\Facades\Validator;
+use Stripe\Stripe;
+use App\Models\Coupon;
+use App\Models\Plans;
+use Laravel\Cashier\Subscription;
+use Stripe\PromotionCode;
+use Carbon\Carbon;
+use Stripe\Customer;
+use App\Models\SubscriptionDiscount; // make sure you have this mode
+
+
 
 class SubscriptionController extends Controller
 {
+    use HandlesApiResponses;
     private const PRICE_IDS = [
         'basic_monthly' => 'price_1RdSRcDgYV6zJ17vntUXtF7T',
         'premium_monthly' => 'price_1RdSSzDgYV6zJ17v3Vcyyrxa',
@@ -25,7 +39,8 @@ class SubscriptionController extends Controller
         ]);
 
         $user = $request->user();
-        $priceId = self::PRICE_IDS[$request->price_id];
+        // $priceId = self::PRICE_IDS[$request->price_id];
+        $priceId = "price_1RdSRcDgYV6zJ17vntUXtF7T";
 
         try {
             // Create or get customer
@@ -56,14 +71,13 @@ class SubscriptionController extends Controller
         }
     }
 
-    public function updateSubscription(Request $request): JsonResponse
+   public function updateSubscription(Request $request): JsonResponse
     {
         $request->validate([
-            'price_slug' => 'required|string|in:basic_monthly,basic_yearly,premium_monthly,premium_yearly',
+            'price_slug' => 'required|string|in:basic_monthly,basic_yearly,premium_monthly,premium_yearly,monthly,yearly',
         ]);
 
-        $user = $request->user();
-        $priceId = Plans::where("slug",$request->price_slug)->pluck('stripe_price_id')->first();
+        $user = Auth::user();
 
         if (!$user->isSubscribed()) {
             return response()->json([
@@ -72,19 +86,76 @@ class SubscriptionController extends Controller
             ], 400);
         }
 
+        // Determine new price ID
+        $tier = $user->getSubscriptionTier(); // "basic" or "premium"
+        $priceSlug = $request->price_slug;
+
+        if ($priceSlug === 'monthly') {
+            $priceSlug = $tier . '_monthly';
+        } elseif ($priceSlug === 'yearly') {
+            $priceSlug = $tier . '_yearly';
+        }
+
+        $priceId = Plans::where('slug', $priceSlug)->value('stripe_price_id');
+
+        if (!$priceId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Price ID not found for the selected plan.',
+            ], 400);
+        }
+
         try {
             $subscription = $user->subscription('default');
-            $subscription->swap($priceId);
+
+            $stripe = new \Stripe\StripeClient(config('services.stripe.secret'));
+
+            // Create a subscription schedule with the existing subscription
+            $schedule = $stripe->subscriptionSchedules->create([
+            'from_subscription' => $subscription->stripe_id,
+            ]);
+
+            // Update the schedule with the new phase
+            $stripe->subscriptionSchedules->update(
+            $schedule->id,
+            [
+                'phases' => [   
+                    [
+                        'items' => [
+                        [
+                            'price' => $schedule->phases[0]->items[0]->price,
+                            'quantity' => $schedule->phases[0]->items[0]->quantity,
+                        ],
+                        ],
+                        'start_date' => $schedule->phases[0]->start_date,
+                        'end_date' => $schedule->phases[0]->end_date,
+                    ],
+                    [
+                        'items' => [
+                        [
+                            'price' => $priceId,
+                            'quantity' => 1,
+                        ],
+                        ],
+                    ],
+                ],
+            ]
+            );
+
+
+
+
 
             return response()->json([
                 'success' => true,
-                'message' => 'Subscription updated successfully',
+                'message' => 'Subscription update scheduled successfully for the next billing cycle',
                 'subscription' => [
                     'id' => $subscription->stripe_id,
                     'status' => $subscription->stripe_status,
                 ],
             ]);
         } catch (\Exception $e) {
+            \Log::info([$e]);
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage(),
@@ -92,9 +163,10 @@ class SubscriptionController extends Controller
         }
     }
 
+
     public function cancelSubscription(Request $request): JsonResponse
     {
-        $user = $request->user();
+        $user = Auth::user();
 
         if (!$user->isSubscribed()) {
             return response()->json([
@@ -104,8 +176,22 @@ class SubscriptionController extends Controller
         }
 
         try {
+            $stripe = new \Stripe\StripeClient(config('services.stripe.secret'));
+
             $subscription = $user->subscription('default');
-            $subscription->cancel();
+            if (!$subscription) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No active subscription found.',
+                ], 400);
+            }
+            $subscriptionId = $subscription->stripe_id;
+            $subscription = $stripe->subscriptions->update
+                            (
+                            $subscriptionId
+                            ,
+                            ['cancel_at_period_end' => true]
+                            );
 
             return response()->json([
                 'success' => true,
@@ -121,86 +207,167 @@ class SubscriptionController extends Controller
     }
 
 
-
     public function resumeSubscription(Request $request): JsonResponse
     {
-        $user = $request->user();
+        $user = Auth::user();
         $subscription = $user->subscription('default');
 
+        // 1. Initial Checks
         if (!$subscription) {
             return response()->json([
                 'success' => false,
-                'message' => 'No subscription found',
+                'message' => 'No active subscription found.',
             ], 400);
         }
 
-        try {
-            // Check different scenarios for resuming
-            if ($subscription->ended()) {
-                // Subscription has completely ended - can resume
-                $subscription->resume();
-
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Ended subscription resumed successfully',
-                    'subscription' => [
-                        'id' => $subscription->stripe_id,
-                        'status' => $subscription->stripe_status,
-                        'ends_at' => $subscription->ends_at,
-                    ],
-                ]);
-            }
-
-            if ($subscription->cancel() && $subscription->onGracePeriod()) {
-                // Subscription is cancelled but still in grace period - can resume
-                $subscription->resume();
-
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Cancelled subscription resumed successfully',
-                    'subscription' => [
-                        'id' => $subscription->stripe_id,
-                        'status' => $subscription->stripe_status,
-                        'ends_at' => $subscription->ends_at,
-                    ],
-                ]);
-            }
-
-            if ($subscription->active() && !$subscription->cancel()) {
-                // Subscription is already active
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Subscription is already active',
-                ], 400);
-            }
-
-            // Default case - try to resume anyway
-            $subscription->resume();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Subscription resumed successfully',
-                'subscription' => [
-                    'id' => $subscription->stripe_id,
-                    'status' => $subscription->stripe_status,
-                    'ends_at' => $subscription->ends_at,
-                ],
-            ]);
-        } catch (\Exception $e) {
+        // Check if the subscription is locally marked as paused
+        // (You should check for is_paused and/or paused_at)
+        if (!$subscription->paused_at) { 
             return response()->json([
                 'success' => false,
-                'message' => 'Resume failed: ' . $e->getMessage(),
-                'debug_info' => [
-                    'cancelled' => $subscription->cancel(),
-                    'ended' => $subscription->ended(),
-                    'active' => $subscription->active(),
-                    'on_grace_period' => $subscription->onGracePeriod(),
-                    'stripe_status' => $subscription->stripe_status,
-                ]
+                'message' => 'Subscription is not currently paused.',
+            ], 400);
+        }
+        
+        // NOTE: This check prevents trying to resume a subscription that has ended.
+        // if ($subscription->ended()) {
+        //     return response()->json([
+        //         'success' => false,
+        //         'message' => 'Subscription has ended. Please start a new one.',
+        //     ], 400);
+        // }
+
+        try {
+            Stripe::setApiKey(config('services.stripe.secret'));
+
+            // 2. Resume on Stripe (Update the subscription to remove pause_collection)
+            // Passing an empty array or null for pause_collection removes the pause setting.
+            // $nowTimestamp = Carbon::now()->getTimestamp();
+            $nowTimestamp = Carbon::now()->addMinutes(1)->getTimestamp();
+
+            $subscription->updateStripeSubscription([
+                'pause_collection' => null, // Or simply pass null
+                'proration_behavior' => 'create_prorations',
+            ]);
+
+            // 3. Update Local Database (Clear the pause flags)
+            $subscription->forceFill([
+                'paused_at' => null, // Clear the pause timestamp
+                'is_paused' => false, // Set the local flag to false
+            ])->save();
+
+            // 4. Update User Status
+            $user->status = "active"; // Set user status back to active
+            $user->save();
+
+            // 5. Return Success
+            return response()->json([
+                'success' => true,
+                'message' => 'Subscription has been successfully resumed!',
+                'stripe_status' => $subscription->fresh()->stripe_status,
+                'status' => $user->fresh()->status,
+            ]);
+
+        } catch (\Exception $e) {
+            // Handle the error, especially the one about the grace period
+            if (str_contains($e->getMessage(), 'Unable to resume subscription that is not within grace period')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to resume: The pause period has expired. Please re-subscribe to a plan.',
+                ], 400);
+            }
+            
+            \Log::error("Stripe Resume Error for User #{$user->id}: " . $e->getMessage()); 
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to resume subscription: ' . $e->getMessage(),
             ], 400);
         }
     }
 
+
+
+    public function getSubscriptionContextDetails(Request $request){
+        $user = Auth::user();
+        $subscription = $user->subscription();
+        \Log::info('logged in with sub : ',[$subscription]);
+        $tier = $user->getSubscriptionTier();
+        $subscriptionData = null;
+
+
+        if ($subscription) {
+            $plan = Plans::where('stripe_price_id', $subscription->stripe_price)
+             ->first(['duration', 'price']);
+            \Log::info('logged in with sub Plan : ',[$plan]);
+
+            $endsAt = "";
+            if(empty($subscription->ends_at)){
+                $startsAt = $subscription->starts_at ?? "";
+
+                if ($startsAt) {
+                    \Log::info('logged in with sub Starts at : ',[$startsAt]);
+
+                    $startsAt = Carbon::parse($startsAt); // Make sure it's a Carbon instance
+                    \Log::info('logged in with sub Carbon Starts at : ',[$startsAt]);
+
+                    $duration = $plan->duration ?? '';
+                    \Log::info('logged in with sub duration at : ',[$duration]);
+
+                    switch (strtolower($duration)) {
+                        case 'monthly':
+                            $endsAt = $startsAt->copy()->addMonth();
+                            break;
+                        case 'yearly':
+                            $endsAt = $startsAt->copy()->addYear();
+                            break;
+                        default:
+                            $endsAt = ""; // fallback if duration not set
+                        }
+                    \Log::info('logged in with sub  Ends at : ',[$endsAt]);
+                    
+                }
+            }
+            else{
+                $endsAt = $subscription->ends_at;
+            }
+            $subscriptionData = [
+                'id' => $subscription->stripe_id ?? "",
+                'stripe_status' => $subscription->stripe_status ?? "",
+                'price_id' => $subscription->stripe_price ?? "",
+                'current_period_end' => $endsAt,
+                'tier' => $tier
+            ];
+
+
+            
+
+            $duration = $plan->duration ?? '';
+            $price = $plan->price ?? '';
+
+            $subscriptionData['duration'] = $duration;
+            $subscriptionData['price'] = $price;
+
+            if($subscription->is_paused){
+                $subscriptionData['is_paused'] =[
+                        'paused_at'=>$subscription->paused_at ?? "",
+                ];
+            }
+            $discount = SubscriptionDiscount::where("subscription_id",$subscription->id)->get()->first();
+            \Log::info('duration:',[$duration]);
+            \Log::info('subscription object:',[$subscription]);
+            if(!empty($discount) && $discount->status === 'active'){
+                $subscriptionData['discount'] = [
+                        'discount_ends_at'=>$discount->discount_ends_at ?? "",
+                        'discount_value'=>$discount->discount_value ?? "",
+                        'discount_type'=>$discount->discount_type ?? "",
+                    ];
+            }
+        }
+        return $this->successResponse( [
+            'subscription' => $subscriptionData,
+        ],'Logged in successfully.');
+    }    
     // public function getSubscriptionDetails(Request $request): JsonResponse
     // {
     //     $user = $request->user();
@@ -233,17 +400,15 @@ class SubscriptionController extends Controller
     {
         $startTime = microtime(true);
         $requestId = uniqid('sub_details_');
-
+        $user = Auth::user();
         Log::info("[$requestId] Starting getSubscriptionDetails", [
-            'user_id' => $request->user()?->id,
+            'user_id' => $user?->id,
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
             'timestamp' => now()->toISOString(),
         ]);
 
         try {
-            $user = $request->user();
-
             Log::info("[$requestId] User retrieved", [
                 'user_id' => $user?->id,
                 'user_email' => $user?->email,
@@ -507,8 +672,7 @@ class SubscriptionController extends Controller
 
     public function pauseSubscription(Request $request): JsonResponse
     {
-        $user = $request->user();
-
+        $user = Auth::user();
         if (!$user->isSubscribed()) {
             return response()->json([
                 'success' => false,
@@ -518,7 +682,7 @@ class SubscriptionController extends Controller
 
         try {
             $subscription = $user->subscription('default');
-
+            
             // Check if subscription is already cancelled/paused
             if ($subscription->ended()) {
                 return response()->json([
@@ -526,20 +690,56 @@ class SubscriptionController extends Controller
                     'message' => 'Subscription is already cancelled',
                 ], 400);
             }
+            Stripe::setApiKey(config('services.stripe.secret'));
+            $resumeDate = Carbon::now()->addMonths(3);                                                                                 
 
-            // Cancel the subscription (this will pause it at the end of the current period)
-            $subscription->cancel();
+            $subscription->updateStripeSubscription(['pause_collection' => [
+                    'behavior' => 'void',
+                    'resumes_at' => $resumeDate->getTimestamp()
+                    ]
+                ]
+            );
 
+            $subscription->forceFill(['paused_at' => Carbon::now(),'is_paused'=>true])->save();
+
+            $user->status = "active";
+            $user->save();
+
+            $endsAt = "";
+
+            if(empty($subscription->ends_at)){
+                $startsAt = $subscription->starts_at ?? "";
+                if ($startsAt) {
+                    $startsAt = Carbon::parse($startsAt); // Make sure it's a Carbon instance
+                    $duration = $plan->duration ?? '';
+
+                    switch (strtolower($duration)) {
+                        case 'monthly':
+                            $endsAt = $startsAt->copy()->addMonth();
+                            break;
+                        case 'yearly':
+                            $endsAt = $startsAt->copy()->addYear();
+                            break;
+                        default:
+                            $endsAt = ""; // fallback if duration not set
+                        }
+                }
+            }
+            else{
+                $endsAt = $subscription->ends_at;
+            }
             return response()->json([
                 'success' => true,
                 'message' => 'Subscription paused successfully. It will remain active until the end of the current billing period.',
-                'ends_at' => $subscription->ends_at->toISOString(),
-                'on_grace_period' => $subscription->onGracePeriod(),
+                'ends_at' => $endsAt,
+                'stripe_status' => $subscription->fresh()->stripe_status,
+                'status'=>$user->fresh()->status,
+                'resume_at'=>$resumeDate
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => $e->getMessage(),
+                'message' => $e->getMessage()
             ], 400);
         }
     }
@@ -642,4 +842,93 @@ class SubscriptionController extends Controller
             ], 500);
         }
     }
+
+    public function getSubscriptionTier(){
+        $user = Auth::user();
+        $subscription = Auth::user()->subscription('default');
+        \Log::info('price stipeee : ',[$subscription['stripe_price']]);
+        \Log::info(" user :",[$user]);
+        \Log::info("tier  :",[$user->subscriptions()]);
+        if($user){
+            \Log::info([$user]);
+            $tier = $user->getSubscriptionTier();
+            \Log::info($tier);
+            return response()->json([
+                'success' => true,
+                'tier' => $tier,
+            ]);
+        }
+    }
+
+    public function applyDiscount(Request $request){
+        $validator = Validator::make($request->all(),[
+            'promo_code'=>'required|string',
+        ]);
+
+        if($validator->fails()){
+            \Log::warning('Validation failed:', $validator->errors()->toArray());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation error',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+        $validated = $validator->validated();
+        $promo_code = $validated['promo_code'];
+        $user = Auth::user();
+
+        if(!$user){
+            return $this->successresponse('user Not Found');
+        }
+
+        $subscription = $user->subscription('default');
+        if (!$subscription || !$subscription->valid()) {
+            return response()->json(['success' => false, 'message' => 'No active subscription found.'], 400);
+        }
+
+        try {
+            \Log::info("hatt");
+            $coupon = Coupon::getCouponDetails($promo_code)->first();
+                \Log::info("coupon : ", $coupon->toArray());
+            $stripeSubscriptionId = $subscription->stripe_id;
+            Stripe::setApiKey(config('services.stripe.secret'));
+            $user->subscription('default')->updateStripeSubscription(['coupon' => $promo_code]);
+
+            // $user->syncSubscription($stripeSubscriptionId);
+
+            $updatedStripeSubscription = \Stripe\Subscription::retrieve($stripeSubscriptionId, ['expand' => ['discount']]);
+            \Log::info("updated subscription : ", $updatedStripeSubscription->toArray());
+            if(isset($updatedStripeSubscription->discount)){
+                $discount = $updatedStripeSubscription->discount->coupon;
+                \Log::info("discount : ", $discount->toArray());
+
+                $discount_applied_at = \Carbon\Carbon::now()->toDateString();
+                $duration_in_months = $coupon->duration_in_months ?? 0;
+                $duration_in_days = $coupon->duration_in_days ?? 0;
+                $discount_ends_at =\Carbon\Carbon::createFromFormat('Y-m-d', $discount_applied_at)
+                                        ->addMonths($duration_in_months)
+                                        ->addDays($duration_in_days)
+                                        ->toDateString();
+
+                SubscriptionDiscount::updateOrCreate([
+                    'subscription_id'       => $subscription->id],[
+                    'discount_type'         => $discount->percent_off ? 'percent' : ($discount->amount_off ? 'amount' : 'unknown'),
+                    'discount_id'           => $discount->id,
+                    'discount_value'        => $discount->percent_off ?? ($discount->amount_off ? $discount->amount_off / 100 : null) ?? null,
+                    'discount_applied_at'   => $discount_applied_at,
+                    'discount_ends_at'      => $discount_ends_at ?? null,
+                ]);
+
+            }
+            return $this->successResponse('30% discount successfully applied!');
+
+        } catch (\Throwable $th) {
+            //throw $th;
+            // Log the error and return a failure response
+            \Log::error('Stripe Discount Error: ' . $th->getMessage());
+            return response()->json(['success' => false, 'message' => 'Failed to apply discount. Please try again.'], 500);
+        }
+    }
+
 }

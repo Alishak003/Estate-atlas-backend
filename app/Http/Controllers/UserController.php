@@ -13,6 +13,7 @@ use App\Http\Requests\ChangePasswordRequest;
 use Laravel\Cashier\Subscription;
 use App\Models\User;
 use Illuminate\Support\Facades\Log;
+use Carbon\Carbon;
 
 
 class UserController extends Controller
@@ -33,7 +34,6 @@ class UserController extends Controller
         }
         return $this->successResponse($user, 'User retrieved successfully.');
     }
-
 
     public function updateProfile(ProfileUpdateRequest $request)
     {
@@ -83,7 +83,7 @@ class UserController extends Controller
 
     public function getUserPlan() 
     {
-        \Log::info("api hit");
+        \Log::info("api hit", [Auth::user()->getAttributes()]);
         $user = Auth::user();
         if(!$user){
             return response()->json(['message'=>'Unautheticated User'],401);
@@ -97,6 +97,12 @@ class UserController extends Controller
         if (!$currentSubscription) {
         return response()->json(['message' => 'No active subscription found.'], 404);
         }
+
+        if (!empty($currentSubscription->renewalDate)) {
+            $currentSubscription->renewalDate = Carbon::parse($currentSubscription->renewalDate)
+                ->format('M d, Y');
+        }
+
 
         // 3. Return the data
         return $this->successResponse(

@@ -1,0 +1,50 @@
+# Use the fpm-alpine image as it is smaller and includes PHP-FPM
+FROM php:8.3-fpm-alpine AS base
+
+# Install necessary system dependencies, including Node.js, NPM, Git, and Nginx
+# We install Alpine packages (apk) here.
+RUN apk update && apk add --no-cache \
+    nginx \
+    git \
+    nodejs \
+    npm \
+    libxml2-dev \
+    libzip-dev \
+    oniguruma-dev \
+    $PHPIZE_DEPS
+
+# Install required PHP extensions
+# We must use docker-php-ext-install for FPM images
+RUN docker-php-ext-install pdo_mysql zip exif bcmath pcntl sockets
+
+# Install Composer globally
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+
+# Set working directory and copy application files
+WORKDIR /var/www/html
+COPY . .
+
+# Run Composer and Node installations (for development)
+RUN composer install
+RUN npm install
+RUN npm run build
+
+# Generate app key and set permissions
+RUN php artisan key:generate --no-interaction
+RUN chown -R www-data:www-data storage bootstrap/cache
+RUN chmod -R 775 storage bootstrap/cache
+
+# --- Final Stage: Setting up the Web Server (Nginx) ---
+FROM base AS final
+
+# Configure Nginx for Laravel (You'll need a separate `nginx.conf` file)
+# Copy the default Nginx configuration from the Nginx base image
+COPY --from=nginx:alpine /etc/nginx/conf.d/default.conf /etc/nginx/conf.d/default.conf
+# Copy our custom configuration that links Nginx to PHP-FPM
+COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
+
+# Expose port 8000 (Render requires this to be set)
+EXPOSE 8000
+
+# Combined startup command: Start PHP-FPM and Nginx concurrently
+CMD sh -c "php-fpm && nginx -g 'daemon off;'"

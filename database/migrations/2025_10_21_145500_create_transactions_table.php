@@ -11,6 +11,7 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (!Schema::hasTable('transactions')){
         Schema::create('transactions', function (Blueprint $table) {
             $table->id(); // Handles the BIGINT UNSIGNED primary key
 
@@ -30,6 +31,7 @@ return new class extends Migration
             $table->timestamps(); // Handles created_at and updated_at
             $table->unsignedBigInteger('created_by')->nullable(); // For admin creation
         });
+    }
     }
 
     /**

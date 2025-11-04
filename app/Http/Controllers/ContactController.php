@@ -39,6 +39,6 @@ class ContactController extends Controller
         AuthHelper::checkAdmin();
         $contact->is_read = 1;
         $contact->save();
-        return $this->successResponse('Contact details fetched successfully!', ['data' => $contact]);
+        return $this->successResponse( ['data' => $contact],'Contact details fetched successfully!');
     }
 }

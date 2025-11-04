@@ -10,7 +10,12 @@ use Stripe\Checkout\Session;
 use Stripe\AccountLink;
 use App\Models\User;
 use App\Models\Plans;
+use App\Models\Transaction;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Log;
+use Stripe\Invoice;
+
+
 
 class StripeConnectController extends Controller
 {
@@ -87,33 +92,226 @@ class StripeConnectController extends Controller
         }
     }
 
-    public function paymentHistory(Request $request)
-    {
-        $user = Auth::user();
-        $invoices = $user->invoices();
-        $invoiceData = collect($invoices)->map(function ($invoice) {
+
+
+// public function paymentHistory(Request $request)
+// {
+//     $user = Auth::user();
+//     $limit = (int) $request->query('per_page', 1);
+//     $startingAfter = $request->query('starting_after', null);
+
+//     \Stripe\Stripe::setApiKey(config('services.stripe.secret'));
+    
+//     try {
+//         $total_invoices = Transaction::where('user_id', $user->id)->count();
+//         Log::info('Fetching Stripe invoices', [
+//             'user_id' => $user->id ?? null,
+//             'stripe_id' => $user->stripe_id ?? null,
+//             'limit' => $limit,
+//             'starting_after' => $startingAfter,
+//         ]);
+
+//         $params = [
+//             'limit' => $limit,
+//             'customer' => $user->stripe_id,
+//         ];
+
+//         if ($startingAfter !== null && $startingAfter !== "null") {
+//             $params['starting_after'] = $startingAfter;
+//         }
+
+//         \Log::info("params : ",$params);
+
+//         $invoices = Invoice::all($params);
+
+//         $invoiceData = collect($invoices->data)->map(function ($invoice) {
+//             return [
+//                 'id' => $invoice->id,
+//                 'date' => date('Y-m-d', $invoice->created),
+//                 'total' => $invoice->total / 100, // Stripe amounts are in cents
+//                 'status' => $invoice->paid ? 'Paid' : 'Unpaid',
+//                 'download_url' => route('stripe.invoice.download', ['invoiceId' => $invoice->id]),
+//             ];
+//         });
+
+//         Log::info('Stripe invoices fetched successfully', [
+//             'user_id' => $user->id,
+//             'invoice_count' => count($invoiceData),
+//             'has_more' => $invoices->has_more,
+//         ]);
+
+//         return response()->json([
+//             'success' => true,
+//             'invoices' => $invoiceData,
+//             'has_more' => $invoices->has_more, // tells frontend if there are more invoices
+//             'starting_after' => end($invoices->data)->id ?? null, // pass for next page fetch
+//             'total_invoices' => $total_invoices,
+
+//         ]);
+//     } catch (\Stripe\Exception\ApiErrorException $e) {
+//         Log::error('Stripe API error while fetching invoices', [
+//             'user_id' => $user->id ?? null,
+//             'stripe_id' => $user->stripe_id ?? null,
+//             'message' => $e->getMessage(),
+//             'trace' => $e->getTraceAsString(),
+//         ]);
+
+//         return response()->json([
+//             'success' => false,
+//             'message' => 'Failed to fetch invoices from Stripe.',
+//             'error' => $e->getMessage(),
+//         ], 500);
+//     } catch (\Exception $e) {
+//         Log::error('Unexpected error while fetching invoices', [
+//             'user_id' => $user->id ?? null,
+//             'message' => $e->getMessage(),
+//             'trace' => $e->getTraceAsString(),
+//         ]);
+
+//         return response()->json([
+//             'success' => false,
+//             'message' => 'An unexpected error occurred.',
+//             'error' => $e->getMessage(),
+//         ], 500);
+//     }
+// }
+
+public function paymentHistory(Request $request)
+{
+    $user = Auth::user();
+    $limit = (int) $request->query('per_page', null);
+
+    \Stripe\Stripe::setApiKey(config('services.stripe.secret'));
+    
+    try {
+        Log::info('Fetching Stripe invoices', [
+            'user_id' => $user->id ?? null,
+            'stripe_id' => $user->stripe_id ?? null,
+            'limit' => $limit,
+        ]);
+
+        if($limit){
+            $invoices = collect($user->invoices())->take($limit);
+        }else{
+            $invoices = collect($user->invoices());
+        }
+        
+        $stripe = new \Stripe\StripeClient(config('services.stripe.secret'));
+        $invoiceData = $invoices->map(function ($invoice) {
             return [
                 'id' => $invoice->id,
-                'date' => $invoice->date()->toDateString(),
-                'total' => $invoice->total(),
+                'date' => date('Y-m-d', $invoice->created),
+                'total' => $invoice->total / 100, // Stripe amounts are in cents
                 'status' => $invoice->paid ? 'Paid' : 'Unpaid',
                 'download_url' => route('stripe.invoice.download', ['invoiceId' => $invoice->id]),
             ];
         });
+
+        Log::info('Stripe invoices fetched successfully', [
+            'user_id' => $user->id,
+            'invoice_count' => count($invoiceData),
+        ]);
+
         return response()->json([
             'success' => true,
-            'invoices' => $invoiceData
+            'invoices' => $invoiceData,
+            'total_invoices' => count($invoiceData),
+
         ]);
+    } catch (\Stripe\Exception\ApiErrorException $e) {
+        Log::error('Stripe API error while fetching invoices', [
+            'user_id' => $user->id ?? null,
+            'stripe_id' => $user->stripe_id ?? null,
+            'message' => $e->getMessage(),
+            'trace' => $e->getTraceAsString(),
+        ]);
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to fetch invoices from Stripe.',
+            'error' => $e->getMessage(),
+        ], 500);
+    } catch (\Exception $e) {
+        Log::error('Unexpected error while fetching invoices', [
+            'user_id' => $user->id ?? null,
+            'message' => $e->getMessage(),
+            'trace' => $e->getTraceAsString(),
+        ]);
+
+        return response()->json([
+            'success' => false,
+            'message' => 'An unexpected error occurred.',
+            'error' => $e->getMessage(),
+        ], 500);
     }
+}
+
+
 
     public function downloadInvoice(Request $request, $invoiceId)
     {
         $user = Auth::user();
-        return $user->downloadInvoice($invoiceId, [
-            'vendor'  => config('app.name'),
-            'product' => 'Subscription',
+
+        Log::info('Invoice download initiated', [
+            'user_id' => $user->id ?? null,
+            'invoice_id' => $invoiceId,
         ]);
+
+        try {
+            // Attempt to download the invoice
+            $response = $user->downloadInvoice($invoiceId, [
+                'vendor'  => config('app.name'),
+                'product' => 'Subscription',
+            ]);
+
+            Log::info('Invoice download successful', [
+                'user_id' => $user->id,
+                'invoice_id' => $invoiceId,
+            ]);
+
+            return $response;
+
+        } catch (\Exception $e) {
+            // Log the error for debugging
+            Log::error('Invoice download failed', [
+                'user_id' => $user->id ?? null,
+                'invoice_id' => $invoiceId,
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to download invoice.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
     }
+
+    public function downloadAllInvoices(Request $request)
+    {
+        $user = Auth::user();
+        $invoices = $user->invoices();
+
+        $zip = new \ZipArchive();
+        $fileName = storage_path('app/invoices_'.$user->id.'.zip');
+
+        if ($zip->open($fileName, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) === TRUE) {
+            foreach ($invoices as $invoice) {
+                $pdf = $user->downloadInvoice($invoice->id, [
+                    'vendor'  => config('app.name'),
+                    'product' => 'Subscription',
+                ]);
+                $pdfContent = $pdf->getContent();
+                $zip->addFromString("invoice_{$invoice->id}.pdf", $pdfContent);
+            }
+            $zip->close();
+        }
+
+        return response()->download($fileName)->deleteFileAfterSend(true);
+    }
+
+
 
     public function createCheckoutSession(Request $request)
     {
@@ -167,7 +365,8 @@ class StripeConnectController extends Controller
         }
 
 
-        $frontendUrl = config('app.frontendurl');
+        // $frontendUrl = config('app.frontendurl');
+        $frontendUrl = 'http://localhost:7535'; 
 
         $checkoutSession = Session::create([
             'customer' => $userModel->stripe_id, 
@@ -182,6 +381,36 @@ class StripeConnectController extends Controller
         ]);
 
         return response()->json(['url' => $checkoutSession->url]);
+    }
+
+    public function checkoutSuccess(Request $request){
+        $validator = Validator::make($request->json()->all(),[
+            'session_id'=>'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            \Log::warning('Validation failed:', $validator->errors()->toArray());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation error',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $validated  =$validator->validated();
+        $sessionId = $validated['session_id'];
+        Stripe::setApiKey(config('services.stripe.secret'));
+
+        if(!$session){
+           throw new NotFoundHTTPException;
+        }
+        else{
+             return response()->json([
+                'success' => true,
+                'message' => 'session found'
+            ], 200);
+        }
     }
 
 }
