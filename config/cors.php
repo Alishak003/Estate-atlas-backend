@@ -23,7 +23,6 @@ return [
         'http://localhost:3000',
         'http://localhost:7535',
         'https://estate-atlas-frontend.vercel.app',
-        'https://estate-atlas-backend.vercel.app',
     ],
 
     'allowed_origins_patterns' => [],
