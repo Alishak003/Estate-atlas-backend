@@ -410,8 +410,8 @@ class WebhookController extends CashierController
                 } else{
                     $type = 'one_time_purchase';
                     $priceId = $invoice['lines']['data'][0]['price']['id'] ?? null;
-                    $product = Products::where('price_id',$priceId)->first();
-                    $productId = $product->id ?? null;
+                    // $product = Products::where('price_id',$priceId)->first();
+                    $productId = null;
                 }
                 Log::info('🔔 invoice.paid webhook payload isSubscribed : ',[$invoice]);
                 Log::info([$sub_id]);
@@ -507,7 +507,7 @@ class WebhookController extends CashierController
                 if(!isset($invoice['subscription'])){
                     $type = 'one_time_purchase';
                     $priceId = $invoice['lines']['data'][0]['price']['id'] ?? null;
-                    $product = Products::where('price_id',$priceId)->first();
+                    $product = Plans::where('price_id',$priceId)->first();
                     $productId = $product->id ?? null;
                 } else{
                     $type = 'subscription_payment';
