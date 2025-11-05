@@ -121,16 +121,3 @@ Route::get('/test', function () {
 
 Route::get('/stripe/invoice/{invoiceId}/download', [StripeConnectController::class, 'downloadInvoice'])->name('stripe.invoice.download'); 
 
-
-Route::get('/run-migrations', function () {
-    // Run all migrations
-    Artisan::call('migrate', ["--force" => true]);
-
-    // Seed Plans table
-    Artisan::call('db:seed', ["--class" => "PlansSeeder"]);
-
-    // Seed Unemployment table
-    Artisan::call('db:seed', ["--class" => "UnemploymentSeeder"]);
-
-    return 'Migrations & Seeders for Plans and Unemployment table ran successfully!';
-});
