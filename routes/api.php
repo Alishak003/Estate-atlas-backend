@@ -15,6 +15,8 @@ use App\Http\Controllers\InvestmentCalculatorController;
 use App\Http\Controllers\StripeConnectController;
 use App\Http\Controllers\CancellationFeedbackController;
 use App\Http\Controllers\HelpSupportController;
+use Illuminate\Support\Facades\Artisan;
+
 
 Route::post('register', [RegisterController::class, 'register']);
 Route::post('register-subscribe', [RegisterController::class, 'registerAndSubscribe']);
@@ -118,3 +120,17 @@ Route::get('/test', function () {
 
 
 Route::get('/stripe/invoice/{invoiceId}/download', [StripeConnectController::class, 'downloadInvoice'])->name('stripe.invoice.download'); 
+
+
+Route::get('/run-migrations', function () {
+    // Run all migrations
+    Artisan::call('migrate', ["--force" => true]);
+
+    // Seed Plans table
+    Artisan::call('db:seed', ["--class" => "PlansSeeder"]);
+
+    // Seed Unemployment table
+    Artisan::call('db:seed', ["--class" => "UnemploymentSeeder"]);
+
+    return 'Migrations & Seeders for Plans and Unemployment table ran successfully!';
+});
