@@ -365,8 +365,8 @@ public function paymentHistory(Request $request)
         }
 
 
-        // $frontendUrl = config('app.frontendurl');
-        $frontendUrl = 'http://localhost:7535'; 
+        $frontendUrl = config('app.frontendurl');
+        // $frontendUrl = 'http://localhost:7535'; 
 
         $checkoutSession = Session::create([
             'customer' => $userModel->stripe_id, 
