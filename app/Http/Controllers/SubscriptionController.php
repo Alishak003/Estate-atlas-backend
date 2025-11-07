@@ -73,74 +73,75 @@ class SubscriptionController extends Controller
 
    public function updateSubscription(Request $request): JsonResponse
     {
-        $request->validate([
-            'price_slug' => 'required|string|in:basic_monthly,basic_yearly,premium_monthly,premium_yearly,monthly,yearly',
-        ]);
 
-        $user = Auth::user();
+        // $request->validate([
+        //     'price_slug' => 'required|string|in:basic_monthly,basic_yearly,premium_monthly,premium_yearly,monthly,yearly',
+        // ]);
 
-        if (!$user->isSubscribed()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'User is not subscribed',
-            ], 400);
-        }
+        // $user = Auth::user();
 
-        // Determine new price ID
-        $tier = $user->getSubscriptionTier(); // "basic" or "premium"
-        $priceSlug = $request->price_slug;
+        // if (!$user->isSubscribed()) {
+        //     return response()->json([
+        //         'success' => false,
+        //         'message' => 'User is not subscribed',
+        //     ], 400);
+        // }
 
-        if ($priceSlug === 'monthly') {
-            $priceSlug = $tier . '_monthly';
-        } elseif ($priceSlug === 'yearly') {
-            $priceSlug = $tier . '_yearly';
-        }
+        // // Determine new price ID
+        // $tier = $user->getSubscriptionTier(); // "basic" or "premium"
+        // $priceSlug = $request->price_slug;
 
-        $priceId = Plans::where('slug', $priceSlug)->value('stripe_price_id');
+        // if ($priceSlug === 'monthly') {
+        //     $priceSlug = $tier . '_monthly';
+        // } elseif ($priceSlug === 'yearly') {
+        //     $priceSlug = $tier . '_yearly';
+        // }
 
-        if (!$priceId) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Price ID not found for the selected plan.',
-            ], 400);
-        }
+        // $priceId = Plans::where('slug', $priceSlug)->value('stripe_price_id');
 
-        try {
-            $subscription = $user->subscription('default');
+        // if (!$priceId) {
+        //     return response()->json([
+        //         'success' => false,
+        //         'message' => 'Price ID not found for the selected plan.',
+        //     ], 400);
+        // }
 
-            $stripe = new \Stripe\StripeClient(config('services.stripe.secret'));
+        // try {
+        //     $subscription = $user->subscription('default');
 
-            // Create a subscription schedule with the existing subscription
-            $schedule = $stripe->subscriptionSchedules->create([
-            'from_subscription' => $subscription->stripe_id,
-            ]);
+        //     $stripe = new \Stripe\StripeClient(config('services.stripe.secret'));
 
-            // Update the schedule with the new phase
-            $stripe->subscriptionSchedules->update(
-            $schedule->id,
-            [
-                'phases' => [   
-                    [
-                        'items' => [
-                        [
-                            'price' => $schedule->phases[0]->items[0]->price,
-                            'quantity' => $schedule->phases[0]->items[0]->quantity,
-                        ],
-                        ],
-                        'start_date' => $schedule->phases[0]->start_date,
-                        'end_date' => $schedule->phases[0]->end_date,
-                    ],
-                    [
-                        'items' => [
-                        [
-                            'price' => $priceId,
-                            'quantity' => 1,
-                        ],
-                        ],
-                    ],
-                ],
-            ]
-            );
+        //     // Create a subscription schedule with the existing subscription
+        //     $schedule = $stripe->subscriptionSchedules->create([
+        //     'from_subscription' => $subscription->stripe_id,
+        //     ]);
+
+        //     // Update the schedule with the new phase
+        //     $stripe->subscriptionSchedules->update(
+        //     $schedule->id,
+        //     [
+        //         'phases' => [   
+        //             [
+        //                 'items' => [
+        //                 [
+        //                     'price' => $schedule->phases[0]->items[0]->price,
+        //                     'quantity' => $schedule->phases[0]->items[0]->quantity,
+        //                 ],
+        //                 ],
+        //                 'start_date' => $schedule->phases[0]->start_date,
+        //                 'end_date' => $schedule->phases[0]->end_date,
+        //             ],
+        //             [
+        //                 'items' => [
+        //                 [
+        //                     'price' => $priceId,
+        //                     'quantity' => 1,
+        //                 ],
+        //                 ],
+        //             ],
+        //         ],
+        //     ]
+        //     );
 
 
 
@@ -149,18 +150,18 @@ class SubscriptionController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Subscription update scheduled successfully for the next billing cycle',
-                'subscription' => [
-                    'id' => $subscription->stripe_id,
-                    'status' => $subscription->stripe_status,
-                ],
+                // 'subscription' => [
+                //     'id' => $subscription->stripe_id,
+                //     'status' => $subscription->stripe_status,
+                // ],
             ]);
-        } catch (\Exception $e) {
-            \Log::info([$e]);
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage(),
-            ], 400);
-        }
+        // } catch (\Exception $e) {
+        //     \Log::info([$e]);
+        //     return response()->json([
+        //         'success' => false,
+        //         'message' => $e->getMessage(),
+        //     ], 400);
+        // }
     }
 
 

@@ -225,7 +225,7 @@ class WebhookController extends CashierController
         }
         return parent::handleCustomerSubscriptionDeleted($payload);
     }
-    protected function handleCustomerPaymentMethodAttached(array $payload)
+    protected function handlePaymentMethodAttached(array $payload)
     {
         Log::info('💳 customer payment_method attached webhook received');
         
