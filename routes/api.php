@@ -86,11 +86,11 @@ Route::group(['middleware' => ['auth:api']], function () {
     // Stripe Connect Routes
     Route::get('/stripe/connect/create', [StripeConnectController::class, 'createAccountLink'])->name('stripe.connect.create');
     Route::post('/stripe/payment-method/update', [StripeConnectController::class, 'updatePaymentMethod']);
-    Route::get('/stripe/payment-history', [StripeConnectController::class, 'paymentHistory']);
     Route::post('/submit-competition-feedback-form', [CancellationFeedbackController::class, 'CreateFeedBack']);    
     Route::get('/stripe/invoices/download-all', [StripeConnectController::class, 'downloadAllInvoices']); 
 
-    
+    Route::get('/stripe/invoice/{invoiceId}/download', [StripeConnectController::class, 'downloadInvoice'])->name('stripe.invoice.download'); 
+    Route::get('/stripe/payment-history', [StripeConnectController::class, 'paymentHistory']);
 
 });
 Route::match(['post', 'put', 'patch', 'head', 'options', 'delete', 'get'], '/affiliate/click/{code}', [AffiliateController::class, 'trackClick'])->name('affiliate.click');
@@ -119,5 +119,5 @@ Route::get('/test', function () {
 });
 
 
-Route::get('/stripe/invoice/{invoiceId}/download', [StripeConnectController::class, 'downloadInvoice'])->name('stripe.invoice.download'); 
+
 
