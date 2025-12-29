@@ -92,92 +92,9 @@ class StripeConnectController extends Controller
         }
     }
 
-
-
-// public function paymentHistory(Request $request)
-// {
-//     $user = Auth::user();
-//     $limit = (int) $request->query('per_page', 1);
-//     $startingAfter = $request->query('starting_after', null);
-
-//     \Stripe\Stripe::setApiKey(config('services.stripe.secret'));
-    
-//     try {
-//         $total_invoices = Transaction::where('user_id', $user->id)->count();
-//         Log::info('Fetching Stripe invoices', [
-//             'user_id' => $user->id ?? null,
-//             'stripe_id' => $user->stripe_id ?? null,
-//             'limit' => $limit,
-//             'starting_after' => $startingAfter,
-//         ]);
-
-//         $params = [
-//             'limit' => $limit,
-//             'customer' => $user->stripe_id,
-//         ];
-
-//         if ($startingAfter !== null && $startingAfter !== "null") {
-//             $params['starting_after'] = $startingAfter;
-//         }
-
-//         \Log::info("params : ",$params);
-
-//         $invoices = Invoice::all($params);
-
-//         $invoiceData = collect($invoices->data)->map(function ($invoice) {
-//             return [
-//                 'id' => $invoice->id,
-//                 'date' => date('Y-m-d', $invoice->created),
-//                 'total' => $invoice->total / 100, // Stripe amounts are in cents
-//                 'status' => $invoice->paid ? 'Paid' : 'Unpaid',
-//                 'download_url' => route('stripe.invoice.download', ['invoiceId' => $invoice->id]),
-//             ];
-//         });
-
-//         Log::info('Stripe invoices fetched successfully', [
-//             'user_id' => $user->id,
-//             'invoice_count' => count($invoiceData),
-//             'has_more' => $invoices->has_more,
-//         ]);
-
-//         return response()->json([
-//             'success' => true,
-//             'invoices' => $invoiceData,
-//             'has_more' => $invoices->has_more, // tells frontend if there are more invoices
-//             'starting_after' => end($invoices->data)->id ?? null, // pass for next page fetch
-//             'total_invoices' => $total_invoices,
-
-//         ]);
-//     } catch (\Stripe\Exception\ApiErrorException $e) {
-//         Log::error('Stripe API error while fetching invoices', [
-//             'user_id' => $user->id ?? null,
-//             'stripe_id' => $user->stripe_id ?? null,
-//             'message' => $e->getMessage(),
-//             'trace' => $e->getTraceAsString(),
-//         ]);
-
-//         return response()->json([
-//             'success' => false,
-//             'message' => 'Failed to fetch invoices from Stripe.',
-//             'error' => $e->getMessage(),
-//         ], 500);
-//     } catch (\Exception $e) {
-//         Log::error('Unexpected error while fetching invoices', [
-//             'user_id' => $user->id ?? null,
-//             'message' => $e->getMessage(),
-//             'trace' => $e->getTraceAsString(),
-//         ]);
-
-//         return response()->json([
-//             'success' => false,
-//             'message' => 'An unexpected error occurred.',
-//             'error' => $e->getMessage(),
-//         ], 500);
-//     }
-// }
-
 public function paymentHistory(Request $request)
 {
+    Log::info("entered function");
     $user = Auth::user();
     $limit = (int) $request->query('per_page', null);
 

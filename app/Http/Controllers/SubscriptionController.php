@@ -71,97 +71,142 @@ class SubscriptionController extends Controller
         }
     }
 
-   public function updateSubscription(Request $request): JsonResponse
+//    public function updateSubscription(Request $request): JsonResponse
+//     {
+
+//         // $request->validate([
+//         //     'price_slug' => 'required|string|in:basic_monthly,basic_yearly,premium_monthly,premium_yearly,monthly,yearly',
+//         // ]);
+
+//         // $user = Auth::user();
+
+//         // if (!$user->isSubscribed()) {
+//         //     return response()->json([
+//         //         'success' => false,
+//         //         'message' => 'User is not subscribed',
+//         //     ], 400);
+//         // }
+
+//         // // Determine new price ID
+//         // $tier = $user->getSubscriptionTier(); // "basic" or "premium"
+//         // $priceSlug = $request->price_slug;
+
+//         // if ($priceSlug === 'monthly') {
+//         //     $priceSlug = $tier . '_monthly';
+//         // } elseif ($priceSlug === 'yearly') {
+//         //     $priceSlug = $tier . '_yearly';
+//         // }
+
+//         // $priceId = Plans::where('slug', $priceSlug)->value('stripe_price_id');
+
+//         // if (!$priceId) {
+//         //     return response()->json([
+//         //         'success' => false,
+//         //         'message' => 'Price ID not found for the selected plan.',
+//         //     ], 400);
+//         // }
+
+//         // try {
+//         //     $subscription = $user->subscription('default');
+
+//         //     $stripe = new \Stripe\StripeClient(config('services.stripe.secret'));
+
+//         //     // Create a subscription schedule with the existing subscription
+//         //     $schedule = $stripe->subscriptionSchedules->create([
+//         //     'from_subscription' => $subscription->stripe_id,
+//         //     ]);
+
+//         //     // Update the schedule with the new phase
+//         //     $stripe->subscriptionSchedules->update(
+//         //     $schedule->id,
+//         //     [
+//         //         'phases' => [   
+//         //             [
+//         //                 'items' => [
+//         //                 [
+//         //                     'price' => $schedule->phases[0]->items[0]->price,
+//         //                     'quantity' => $schedule->phases[0]->items[0]->quantity,
+//         //                 ],
+//         //                 ],
+//         //                 'start_date' => $schedule->phases[0]->start_date,
+//         //                 'end_date' => $schedule->phases[0]->end_date,
+//         //             ],
+//         //             [
+//         //                 'items' => [
+//         //                 [
+//         //                     'price' => $priceId,
+//         //                     'quantity' => 1,
+//         //                 ],
+//         //                 ],
+//         //             ],
+//         //         ],
+//         //     ]
+//         //     );
+
+
+
+
+
+//             return response()->json([
+//                 'success' => true,
+//                 'message' => 'Subscription update scheduled successfully for the next billing cycle',
+//                 // 'subscription' => [
+//                 //     'id' => $subscription->stripe_id,
+//                 //     'status' => $subscription->stripe_status,
+//                 // ],
+//             ]);
+//         // } catch (\Exception $e) {
+//         //     \Log::info([$e]);
+//         //     return response()->json([
+//         //         'success' => false,
+//         //         'message' => $e->getMessage(),
+//         //     ], 400);
+//         // }
+//     }
+
+    public function updateSubscription(Request $request): JsonResponse
     {
+        // Set your secret key. Remember to switch to your live secret key in production.
+        // See your keys here: https://dashboard.stripe.com/apikeys
+        $stripe = new \Stripe\StripeClient(config('services.stripe.secret'));
 
-        // $request->validate([
-        //     'price_slug' => 'required|string|in:basic_monthly,basic_yearly,premium_monthly,premium_yearly,monthly,yearly',
-        // ]);
+        // Create a subscription schedule with the existing subscription
+        $schedule = $stripe->subscriptionSchedules->create([
+        'from_subscription' => 'sub_ERf72J8Sc7qx7D',
+        ]);
 
-        // $user = Auth::user();
-
-        // if (!$user->isSubscribed()) {
-        //     return response()->json([
-        //         'success' => false,
-        //         'message' => 'User is not subscribed',
-        //     ], 400);
-        // }
-
-        // // Determine new price ID
-        // $tier = $user->getSubscriptionTier(); // "basic" or "premium"
-        // $priceSlug = $request->price_slug;
-
-        // if ($priceSlug === 'monthly') {
-        //     $priceSlug = $tier . '_monthly';
-        // } elseif ($priceSlug === 'yearly') {
-        //     $priceSlug = $tier . '_yearly';
-        // }
-
-        // $priceId = Plans::where('slug', $priceSlug)->value('stripe_price_id');
-
-        // if (!$priceId) {
-        //     return response()->json([
-        //         'success' => false,
-        //         'message' => 'Price ID not found for the selected plan.',
-        //     ], 400);
-        // }
-
-        // try {
-        //     $subscription = $user->subscription('default');
-
-        //     $stripe = new \Stripe\StripeClient(config('services.stripe.secret'));
-
-        //     // Create a subscription schedule with the existing subscription
-        //     $schedule = $stripe->subscriptionSchedules->create([
-        //     'from_subscription' => $subscription->stripe_id,
-        //     ]);
-
-        //     // Update the schedule with the new phase
-        //     $stripe->subscriptionSchedules->update(
-        //     $schedule->id,
-        //     [
-        //         'phases' => [   
-        //             [
-        //                 'items' => [
-        //                 [
-        //                     'price' => $schedule->phases[0]->items[0]->price,
-        //                     'quantity' => $schedule->phases[0]->items[0]->quantity,
-        //                 ],
-        //                 ],
-        //                 'start_date' => $schedule->phases[0]->start_date,
-        //                 'end_date' => $schedule->phases[0]->end_date,
-        //             ],
-        //             [
-        //                 'items' => [
-        //                 [
-        //                     'price' => $priceId,
-        //                     'quantity' => 1,
-        //                 ],
-        //                 ],
-        //             ],
-        //         ],
-        //     ]
-        //     );
+        // Update the schedule with the new phase
+        $stripe->subscriptionSchedules->update(
+        $schedule->id,
+        [
+            'phases' => [
+            [
+                'items' => [
+                [
+                    'price' => $schedule->phases[0]->items[0]->price,
+                    'quantity' => $schedule->phases[0]->items[0]->quantity,
+                ],
+                ],
+                'start_date' => $schedule->phases[0]->start_date,
+                'end_date' => $schedule->phases[0]->end_date,
+            ],
+            [
+                'items' => [
+                [
+                    'price' => '{{PRICE_PRINT_BASIC}}',
+                    'quantity' => 1,
+                ],
+                ],
+                'duration' => [
+                'interval' => 'month',
+                'interval_count' => 1,
+                ],
+            ],
+            ],
+        ]
+        );
 
 
-
-
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Subscription update scheduled successfully for the next billing cycle',
-                // 'subscription' => [
-                //     'id' => $subscription->stripe_id,
-                //     'status' => $subscription->stripe_status,
-                // ],
-            ]);
-        // } catch (\Exception $e) {
-        //     \Log::info([$e]);
-        //     return response()->json([
-        //         'success' => false,
-        //         'message' => $e->getMessage(),
-        //     ], 400);
-        // }
     }
 
 
